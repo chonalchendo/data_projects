@@ -1,0 +1,4 @@
+"0","```r
+##what are some issues with the cleanliness of this data?
+games_data <- read_csv(\"data/steam-200k-sample.csv\",skip = 4, col_types = cols(\"bought online\" = col_logical()))
+```"

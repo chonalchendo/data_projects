@@ -1,0 +1,131 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+##########
+load in libraries
+##########
+```{r}
+library(tidyverse)
+library(janitor)
+library(lubridate)
+```
+
+##########
+load in dataset
+##########
+
+```{r}
+flight_prices <- read_csv("raw_data/flight_price_data.csv") %>% clean_names()
+```
+
+##########
+Investigate data
+##########
+
+```{r}
+names(flight_prices) 
+dim(flight_prices)
+str(flight_prices)
+head(flight_prices)
+tail(flight_prices)
+
+```
+
+############
+Clean Data
+############
+
+- clean the date_of_journey column - transform to proper format using dmy()
+- could clean the arrival_time column
+- could change the duration time to an integer 
+- create a new column that converts price to GBP
+
+```{r}
+
+flight_prices_clean <- flight_prices %>% 
+  ## get rid of NA values - only one
+  drop_na() %>% 
+  mutate(
+    ## clean date_of_journey to proper format
+    date_of_journey = dmy(date_of_journey), 
+    ## create new gbp column for price
+    price_gbp = round(price*0.0101,digits = 2),
+    ## adding in "0m" for rows which only display hrs
+    duration = if_else(str_detect(duration, "[0-9]h$"), paste(duration, "0m"), duration),
+    ## transform duration to proper time column
+    duration = hm(duration),
+    ## remove date
+    arrival_time = str_replace_all(arrival_time, "[0-9][0-9]+ [A-Z][a-z][a-z]$", ""),
+    ## add on :00 to time
+    arrival_time = if_else(str_detect(arrival_time, "^[0-9][0-9]"), paste0(arrival_time, ":00"), arrival_time),
+    ## remove space between minutes and seconds
+    arrival_time = str_replace_all(arrival_time, " ", ""),
+    ## transform to date time format
+    arrival_time = hms::as.hms(arrival_time))
+```
+
+############
+Inital investigation of dataset
+############
+
+- statistical insights
+- most expensive airline
+- average price per route
+- anything else you can think of
+
+```{r}
+# top 10 most expensive routes on average
+flight_prices_clean %>% 
+  group_by(route) %>% 
+  summarise(avg_route_price = mean(price_gbp)) %>% 
+  slice_max(avg_route_price, n = 10)
+```
+
+```{r}
+flight_prices_clean %>% 
+  group_by(airline) %>% 
+  summarise(avg_price = mean(price_gbp)) %>% 
+  slice_max(avg_price, n = 10)
+```
+
+
+############
+Quick Visualisations
+############
+
+- show the distribution of data
+- any relationships between variables
+- progression of price over time
+
+
+############
+inferential statistics
+############
+
+- confidence intervals
+- probabilities 
+- sample datasets
+
+
+############
+Time Series
+############
+
+- transform dataset into a tsibble
+- perform times series analysis - identify trends - seasonality/cyclical (use website in tabs)
+- Forecast for future prices? 
+
+#############
+Dashboard? 
+#############
+
+
+############
+regression analysis
+############
+
+- univariate and multivariate analysis
+- regression diagnostics
+- variable engineering 

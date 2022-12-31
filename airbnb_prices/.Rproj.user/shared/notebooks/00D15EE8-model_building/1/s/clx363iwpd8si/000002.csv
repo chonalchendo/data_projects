@@ -1,0 +1,9 @@
+"0","```r
+library(car)
+library(tidyverse)
+library(ggfortify)
+library(GGally)
+library(modelr)
+
+glimpse(Prestige)
+```"

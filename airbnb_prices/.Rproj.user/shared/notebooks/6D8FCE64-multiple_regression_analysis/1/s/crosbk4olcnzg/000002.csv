@@ -1,0 +1,9 @@
+"0","```r
+# RailTrail from mosaic library 
+railtrail_clean <- RailTrail %>% 
+  clean_names() %>% 
+  mutate(across(spring:fall, as.logical))
+```"
+"1","Error in RailTrail %>% clean_names() %>% mutate(across(spring:fall, as.logical)) : 
+  could not find function \"%>%\"
+"

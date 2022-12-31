@@ -1,0 +1,8 @@
+"0","```r
+
+# 2. keep them
+
+comms_data %>% 
+  group_by(churn) %>% 
+  summarise(mean_monthly_charges = mean(monthly_charges))
+```"

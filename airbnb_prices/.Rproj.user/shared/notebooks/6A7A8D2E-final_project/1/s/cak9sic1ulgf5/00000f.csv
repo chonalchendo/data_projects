@@ -1,0 +1,5 @@
+"0","prices_reg_df %>% "
+"0","  ggplot(aes(neighbourhood_group, log_price, fill = neighbourhood_group)) + "
+"0","  geom_boxplot(show.legend = FALSE) +"
+"0","  theme_bw() + "
+"0","  labs(title = ""Relationship between Price and Borough"")"

@@ -1,0 +1,4 @@
+"0","```r
+names(state_income_data)
+dim(state_income_data)
+```"

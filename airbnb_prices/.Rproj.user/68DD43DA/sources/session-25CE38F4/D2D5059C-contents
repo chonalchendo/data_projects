@@ -1,0 +1,317 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#########
+text mining lab
+#########
+
+#########
+load in packages
+#########
+
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(ggwordcloud)
+library(hcandersenr)
+library(harrypotter)
+library(janeaustenr)
+```
+
+
+
+```{r}
+hcandersen_en
+
+```
+
+```{r}
+library(text2vec)
+glimpse(movie_review)
+```
+
+#########
+task 1
+#########
+
+Select only “The little mermaid” from the hcandersen_en data frame.
+Unnest the tokens and count the frequency of words
+Remove stop words
+Plot this using ggwordcloud(), from the package ggwordcloud
+
+```{r}
+mermaid <- hcandersen_en %>% 
+  filter(book == "The little mermaid")
+```
+
+```{r}
+mermaid_word <- mermaid %>% 
+  unnest_tokens(word, text) %>% 
+  anti_join(stop_words) 
+
+
+mermaid_sent %>% 
+  ggplot(aes(label = word)) +
+  geom_text_wordcloud(shape = "diamond") +
+  scale_size_area(max_size = 20) +
+  theme_minimal()
+```
+
+
+# sentiments
+
+```{r}
+mermaid_sentiment <- mermaid_word %>% 
+  left_join(get_sentiments("nrc"))
+```
+
+```{r}
+mermaid_sentiment %>% 
+  group_by(word, sentiment) %>% 
+  summarise(count = n()) %>% 
+  ungroup() %>% 
+  slice_max(count, n = 10) %>% 
+  mutate(word = as_factor(word)) %>% 
+  ggplot(aes(reorder(word, count), count, fill = sentiment)) +
+  geom_col() +
+  theme_classic()
+```
+
+
+Find the most common bigrams in the Harry Potter book “Chamber of Secrets” that 
+start with “very” followed by a sentiment word from the "bing" sentiment list.
+
+```{r}
+text <- harrypotter::chamber_of_secrets
+
+book_harry <- tibble(
+  text = text,
+  sentence = 1:length(text)
+)
+
+get_sentiments("bing") %>% 
+  distinct(sentiment)
+
+book_harry %>% 
+  unnest_tokens(bigram, text, token = "ngrams", n = 2) %>% 
+  filter(str_detect(bigram, "^very")) %>% 
+  mutate(word = str_remove_all(bigram, "very ")) %>% 
+  select(-bigram) %>% 
+  inner_join(get_sentiments("bing")) %>% 
+  count(word, sort = TRUE)
+  
+```
+
+Use TF-IDF scores to find the 5 words most associated with the three sets of 
+books we’ve looked at so far (Harry Potter novels, Hans Christian Andersen 
+stories and Jane Austen’s novels).
+
+Hint: The hard part here is creating a data frame with all the authors. In 
+particular the Harry Potter books require a bit of work to join them all 
+together. Look back at the notes to see how we created a character vector with 
+each book as an element.
+
+```{r}
+
+```
+
+
+
+```{r}
+titles <- c("Philosopher's Stone", "Chamber of Secrets", "Prisoner of Azkaban",
+            "Goblet of Fire", "Order of the Phoenix", "Half Blood Prince",
+            "Deathly Hallows", "Pride and Prejudice", "Sense and Sensibility", 
+            "Emma", "Persuasion", "Mansfield Park", "Northanger Abbey", 
+            "HC Andersen")
+
+books <- list(harrypotter::philosophers_stone, harrypotter::chamber_of_secrets,
+              harrypotter::prisoner_of_azkaban, harrypotter::goblet_of_fire,
+              harrypotter::order_of_the_phoenix, harrypotter::half_blood_prince,
+              harrypotter::deathly_hallows, prideprejudice, sensesensibility, 
+              emma, persuasion, mansfieldpark, northangerabbey, hcandersen_en)
+```
+
+```{r}
+books <- purrr::map_chr(books, paste, collapse = " ")
+str(books)
+```
+
+```{r}
+all_books_df <- tibble(
+  title = titles, 
+  text = books,
+) %>% 
+  unnest_tokens(word, text)
+
+```
+
+```{r}
+all_books_df %>% 
+  count(author, word) %>%
+  bind_tf_idf(word, author, n) %>%
+  arrange(author, desc(tf_idf)) %>%
+  group_by(author) %>%
+  slice(1:5)
+```
+
+not sure this correct
+
+will do harry potter books first again 
+
+```{r}
+hp_titles <- c("Philosopher's Stone", "Chamber of Secrets", "Prisoner of Azkaban",
+            "Goblet of Fire", "Order of the Phoenix", "Half Blood Prince",
+            "Deathly Hallows")
+
+hp_books <- list(harrypotter::philosophers_stone, harrypotter::chamber_of_secrets,
+                 harrypotter::prisoner_of_azkaban, harrypotter::goblet_of_fire,
+                 harrypotter::order_of_the_phoenix, harrypotter::half_blood_prince,
+                 harrypotter::deathly_hallows)
+
+hp_book_df <- tibble(
+  title = hp_titles,
+  text = as.character(hp_books),
+  author = "JK Rowling") %>% 
+  unnest_tokens(word, text)
+
+hp_book_df
+
+hp_books_tf_idf <- hp_book_df %>% 
+  count(word,title) %>% 
+  bind_tf_idf(word,title,n) %>% 
+  arrange(desc(tf_idf))
+
+hp_books_tf_idf %>% 
+  group_by(title) %>% 
+  slice_max(tf_idf)
+```
+
+```{r}
+library(forcats)
+
+# visualise the most important words per book by tf_idf score
+
+hp_books_tf_idf %>%
+  group_by(title) %>%
+  slice_max(tf_idf, n = 15) %>%
+  ungroup() %>%
+  ggplot(aes(tf_idf, fct_reorder(word, tf_idf), fill = title)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~title, ncol = 3, scales = "free") +
+  labs(x = "tf-idf", y = NULL)
+```
+
+```{r}
+pp_titles <- c("Pride and Prejudice", "Sense and Sensibility", "Emma", "Persuasion",
+            "Mansfield Park", "Northanger Abbey")
+
+pp_books <- list(prideprejudice, sensesensibility, emma, persuasion, mansfieldpark,  
+              northangerabbey)
+
+pp_books <- purrr::map_chr(pp_books, paste, collapse = " ")
+str(pp_books)
+```
+
+```{r}
+pp_books_df <- tibble(
+  title = pp_titles, 
+  text = pp_books,
+  author = "Jane Austen"
+) %>% 
+  unnest_tokens(word, text)
+
+pp_books_df
+```
+
+```{r}
+hc_books_df <- hcandersen_en %>% 
+  rename("title" = "book") %>% 
+  mutate(author = "HC Andersen") %>% 
+  select(title, author, text) %>% 
+  unnest_tokens(word, text)
+
+hc_books_df
+```
+
+```{r}
+full_books <- bind_rows(hp_book_df, pp_books_df, hc_books_df)
+```
+
+```{r}
+full_books
+
+full_books_tf_idf <- full_books %>% 
+  count(author, word) %>%
+  bind_tf_idf(word, author, n) %>%
+  arrange(author, desc(tf_idf)) %>%
+  group_by(author) %>%
+  slice(1:5)
+
+full_books_tf_idf
+
+  
+```
+
+
+
+Use unnest_tokens() to find all the words in the movie review dataset.
+
+```{r}
+movie_words <- movie_review %>% 
+  unnest_tokens(word, review)
+```
+
+
+Create another data frame with the 50 most common words in this dataset 
+(excluding stop words).
+
+```{r}
+movie_word_no_stop <- movie_words %>% 
+  anti_join(stop_words)
+
+movie_50_words <- movie_word_no_stop %>% 
+  count(word, sort = TRUE) %>% 
+  slice_max(n, n = 50)
+```
+
+
+Now use inner_join(), so that your original data frame contains only the top 
+50 words.
+
+```{r}
+movie_joined <- inner_join(movie_words, movie_50_words, by = "word")
+```
+
+
+Create dummy variables for each word
+
+```{r}
+# dont really need to do this 
+movie_regress <- movie_joined %>% 
+  fastDummies::dummy_cols(select_columns = "word",
+                          # avoid dummy variable trap
+                          remove_first_dummy = TRUE, 
+                          # remove original col
+                          remove_selected_columns = TRUE)
+```
+
+
+Now create an appropriate regression model where you predict sentiment using the word dummies. What words are important for predicting sentiment?
+
+
+# sentiment is a dummy variable too so can be a logistic regression 
+
+```{r}
+movie_regress <- glm(sentiment ~ word, 
+    family = binomial(link = "logit"),
+    data = movie_joined)
+
+summary(movie_regress)
+
+broom::tidy(movie_regress) %>% 
+  arrange(p.value)
+```
+

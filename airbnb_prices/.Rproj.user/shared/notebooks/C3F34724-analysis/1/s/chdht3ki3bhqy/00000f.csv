@@ -1,0 +1,10 @@
+"0","ggplot(subset(prices_df, price < 500),aes(x = price)) +
+  geom_density(
+    mapping = aes(fill = neighbourhood_group), 
+    bandwidth = 100, 
+    alpha = .6, size = 0.5, show.legend = FALSE) +
+  theme_classic() +
+  # scale_fill_economist() +
+  facet_wrap(~neighbourhood_group)
+"
+"2","Warning: [38;5;251mIgnoring unknown parameters: `bandwidth`[39m"

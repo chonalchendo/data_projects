@@ -1,0 +1,7 @@
+"0","```r
+# 1.1 Drop missing values (biggest drop - all missing values) 
+comms_data %>% 
+  drop_na() %>% 
+  group_by(churn) %>% 
+  summarise(mean_monthly_charges = mean(monthly_charges))
+```"

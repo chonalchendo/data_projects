@@ -1,0 +1,4 @@
+"0","```r
+state_income_data %>% 
+  select(Index, State, Y2002:Y2008)
+```"

@@ -1,0 +1,15 @@
+"0","alias(lm(log_price ~ ., data = prices_reg_df))"
+"1","Model"
+"1"," "
+"1",":
+"
+"1","log_price ~ neighbourhood_group + latitude + longitude + room_type + 
+"
+"1","    minimum_nights + number_of_reviews + reviews_per_month + 
+"
+"1","    calculated_host_listings_count + availability_365 + last_review_month + 
+"
+"1","    name_length + apartment_ad + private_ad + central_park_ad
+"
+"1","
+"

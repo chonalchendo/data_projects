@@ -1,0 +1,6 @@
+"0","```r
+state_income_data %>% 
+  select(State,Y2008) %>% 
+  arrange(desc(Y2008)) %>% 
+  filter(Y2008 > 1000000)
+```"

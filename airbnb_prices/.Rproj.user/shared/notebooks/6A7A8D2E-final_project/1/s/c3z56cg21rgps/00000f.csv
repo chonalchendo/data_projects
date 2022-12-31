@@ -1,0 +1,24 @@
+"0","prices_reg_df <- prices_new %>% "
+"0","  # create dummy variables for chosen words that may impact price"
+"0","  mutate(apartment_ad = if_else(str_detect(name, ""[Aa]partment""), ""YES"", ""NO""),"
+"0","         private_ad = if_else(str_detect(name, ""[Pp]rivate""), ""YES"", ""NO""),"
+"0","         central_park_ad = if_else(str_detect(name, ""[Cc]entral [Pp]ark""), "
+"0","                                   ""YES"", ""NO""),"
+"0","         ) %>% "
+"0","  dplyr::select(-c(name, neighbourhood, price_class)) %>% "
+"0","  # log transform price"
+"0","  mutate(log_price = log(price + 1)) %>% "
+"0","  # bring price to the front"
+"0","  dplyr::select(log_price,price, everything()) %>% "
+"0","  # change all character variables to factor"
+"0","  mutate(across(.cols = is.character, "
+"0","                .fns = as_factor)) %>% "
+"0","  dplyr::select(-price)"
+"2","Warning: Use of bare predicate functions was deprecated in tidyselect 1.1.0.
+Please use wrap predicates in `where()` instead.
+# Was:
+data %>% select(is.character)
+
+# Now:
+data %>% select(where(is.character))"
+"0","  "

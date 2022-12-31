@@ -1,0 +1,5 @@
+"0","```r
+state_income_data <- state_income_data %>% rename(first_letter = Index)
+
+state_income_data
+```"

@@ -1,0 +1,7 @@
+"0","```r
+state_income_data %>% 
+  filter(first_letter %in% c(\"A\",\"B\",\"C\")) %>% 
+  select(State,Y2002,Y2008) %>% 
+  mutate(income_change = Y2008 - Y2002)
+  
+```"

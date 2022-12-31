@@ -1,0 +1,211 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#########
+Multiple Regression Analysis
+#########
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(fastDummies)
+library(GGally)
+library(ggfortify)
+library(mosaic)
+library(mosaicData)
+```
+
+
+```{r}
+# RailTrail from mosaic library 
+railtrail_clean <- RailTrail %>% 
+  clean_names() %>% 
+  mutate(across(spring:fall, as.logical))
+```
+
+```{r}
+railtrail_clean
+```
+
+```{r}
+railtrail_trim <- railtrail_clean %>% 
+  select(-c(hightemp, lowtemp, fall, day_type))
+
+railtrail_trim
+```
+
+```{r}
+alias(lm(volume ~ ., railtrail_clean))
+```
+
+```{r message= FALSE}
+library(GGally)
+
+ggpairs(railtrail_trim) +
+  theme_classic()
+```
+
+## univariate regression (or bivariate)
+
+```{r}
+railtrail_trim %>% 
+  ggplot(aes(avgtemp, volume)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+```{r}
+lm1 <- lm(volume ~ avgtemp, railtrail_trim)
+
+autoplot(lm1)
+```
+
+Heteroskedasticity 
+  - homogeneity of variance
+  - is the variance the same for all values of x
+  - important because it violates the assumptions that regression is __designed__
+  to work under
+
+```{r}
+summary(lm1)
+```
+
+every 1 degree increase in temperature is associated with a 4.8 increase in people 
+walking on the trail on average
+
+__intercept__ is where the line crosses the y axis 
+the y axis meets x at 0 
+therefore when x is 0 the line is at y = 99.6 
+
+
+## Parallel Slopes Model
+
+```{r}
+railtrail_trim %>% 
+  ggplot(aes(weekday, volume)) +
+  geom_boxplot()
+
+railtrail_trim %>% 
+  ggplot(aes(avgtemp, volume, colour = weekday)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+
+railtrail_trim %>% 
+  summarise(cor(weekday, volume))
+```
+
+```{r}
+lm2 <- lm(volume ~ avgtemp + weekday, railtrail_trim) 
+
+autoplot(lm2)
+```
+
+```{r}
+summary(lm2)
+```
+
+```{r}
+lm(volume ~ avgtemp + weekday + rnorm(90, 100, 20), data = railtrail_trim)
+```
+
+
+```{r}
+railtrail_trim %>% 
+  ggplot(aes(avgtemp, volume, colour = weekday)) +
+  geom_point() +
+  geom_abline(slope = 4.541, intercept = 163.022) +
+  geom_abline(slope = 4.541, intercept = 163.022 - 70.320, colour = 4)
+```
+
+```{r}
+lm3 <- lm(volume ~ avgtemp + weekday + summer, data = railtrail_trim)
+
+plotModel(lm3)
+
+summary(lm3)
+```
+
+```{r}
+railtrail_trim
+```
+
+## Interactions 
+
+```{r}
+lm4 <- lm(volume ~ avgtemp + weekday + avgtemp:weekday, data = railtrail_trim)
+plot(lm4)
+
+summary(lm4)
+```
+
+$$
+
+\widehat{volume} = intercept + b_{avgtemp}, \times avgtemp + b_{weekday}, 
+\times weekday + b_{avgtemp:weekday}, \times avgtemp \times weekday
+
+$$
+
+__interaction__ means the response responds differently to a predictor depending 
+on the level of the predictor 
+
+example: avgtemp:weekday --> interaction term
+
+
+```{r}
+railtrail_trim %>% 
+  ggplot(aes(cloudcover, volume)) + 
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+```{r}
+lm5 <- lm(volume ~ avgtemp + weekday + cloudcover, railtrail_trim)
+
+par(mfrow = c(2,2))
+plot(lm5)
+
+
+```
+
+The coefficient of a continuous predictor equals the change in repsonse variable
+for a 1 unit increase in that predictor 
+__with all other predictor variables held constant__
+
+
+```{r}
+lm7 <- lm(volume ~ avgtemp + cloudcover + weekday + precip + avgtemp:precip, data = railtrail_trim)
+
+par(mfrow = c(2,2))
+plot(lm7)
+
+```
+
+```{r}
+summary(lm7)
+```
+
+```{r}
+coplot(volume ~ avgtemp | precip,
+       rows = 1,
+       panel = function(x, y, ...){
+         points(x, y)
+         abline(lm(y ~ x), col = "blue")
+       },
+       data = railtrail_trim)
+```
+
+```{r}
+coplot(volume ~ cloudcover | avgtemp,
+       rows = 1,
+       panel = function(x, y, ...) {
+         points(x, y)
+         abline(lm(y ~ x), col = 4)
+       },
+       railtrail_trim)
+```
+
+For a given temperature, the graphs demonstrate the relationship between volume
+and cloudcover. We can see that when cloudcover increases then volume decreases. 
+Reps over different temperatures. 

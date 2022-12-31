@@ -1,0 +1,9 @@
+"0","```r
+
+comms_data %>% 
+  mutate(
+    monthly_charges = coalesce(monthly_charges,mean(monthly_charges,na.rm = TRUE))
+    ) %>% 
+  group_by(churn) %>% 
+  summarise(mean_monthly_charges = mean(monthly_charges))
+```"

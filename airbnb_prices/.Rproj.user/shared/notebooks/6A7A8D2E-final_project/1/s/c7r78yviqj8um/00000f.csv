@@ -1,0 +1,6 @@
+"0","# Density of New York Boroughs"
+"0","prices_new %>% "
+"0","  ggplot(aes(longitude, latitude)) +"
+"0","  geom_density2d(aes(colour = neighbourhood_group)) + "
+"0","  theme_bw() +"
+"0","  labs(title = ""Density of Boroughs"")"

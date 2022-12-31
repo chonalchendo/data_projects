@@ -1,0 +1,10 @@
+"0","```r
+state_income_data
+
+state_income_data %>% 
+  filter(first_letter %in% c(\"A\",\"B\",\"C\")) %>% 
+  select(State,Y2008) %>% 
+  arrange(desc(Y2008))
+  
+
+```"

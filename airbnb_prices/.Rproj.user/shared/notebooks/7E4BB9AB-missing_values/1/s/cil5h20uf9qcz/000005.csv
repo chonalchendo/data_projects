@@ -1,0 +1,17 @@
+"0","```r
+
+
+# coalesce(vector_with_nas, value_to_replace_na_with)
+
+some_numbers <- c(1,3,7,NA)
+coalesce(some_numbers,40)
+```"
+"1","[1]  1  3  7 40
+"
+"0","```r
+# 3 impute them
+
+comms_data %>% 
+  mutate(monthly_charges_imputed = coalesce(monthly_charges,30)) %>% 
+  select(monthly_charges, monthly_charges_imputed)
+```"

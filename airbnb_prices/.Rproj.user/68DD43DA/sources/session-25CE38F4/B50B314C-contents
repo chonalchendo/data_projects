@@ -1,0 +1,607 @@
+---
+title: "nyc_bikes_report"
+author: "Conal Henderson"
+date: "2022-11-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r}
+library(tsibbledata)
+library(tidyverse)
+library(lubridate)
+library(ggthemes)
+library(tsibble)
+library(ggrepel)
+library(ggpmisc)
+library(sf)
+library(rnaturalearth)
+library(jsonlite)
+library(leaflet)
+library(ggfortify)
+library(feasts)
+library(janitor)
+library(fable)
+library(urca)
+
+```
+
+
+```{r}
+nyc_bikes <- nyc_bikes %>% 
+  mutate(day = wday(start_time, label = TRUE),
+         month = month(start_time, label = TRUE),
+         year = year(start_time)) %>% 
+  select(bike_id, day:year, everything())
+
+nyc_bikes <- nyc_bikes %>% 
+  mutate(ride_time = as.duration(stop_time - start_time) %>% as.numeric("minutes"))
+
+nyc_bikes <- nyc_bikes %>% 
+  mutate(quarter = case_when(
+    month %in% c("Jan", "Feb", "Mar") ~ "Q1",
+    month %in% c("Apr", "May", "Jun") ~ "Q2",
+    month %in% c("July", "Aug", "Sep") ~ "Q3",
+    TRUE ~ "Q4"
+  ),
+  age = 2022 - birth_year)
+
+nyc_bikes <- nyc_bikes %>% 
+  mutate(age_category = case_when(
+    age >= 50 ~ "50+",
+    age > 35 ~ "36-49",
+    age > 20 ~ "21-35", 
+    TRUE ~ "under 21"
+  ))
+```
+
+
+# Introduction
+
+## The Data
+
+The data that forms the basis of my project will be the nyc_bikes dataset from
+the tsibbledata library. The data consists of bike usage from the company
+NYC Citi Bike from a sample of 10 bikes across 2018. 
+
+The dataset contains information on customer gender, birth year and whether they
+are a subscriber or not. Geolocational information of customer bike ride
+start and stop points are also included as well as the location of the start and
+end station. 
+
+## Main Objectives of Report
+
+The report will provide implications for: 
+
+- Increasing the number of bike hires
+  - Increase revenue
+
+
+Highlight areas including: 
+
+  - How do bike rental numbers change over time?
+  - How do bike rental numbers change based on gender, age, customer type?
+  - what does the geolocation of bike rentals indicate? 
+
+
+
+## Ethical Considerations
+
+When dealing with personal customer information it is essential we consider the
+consequences of how we use the data and the potentially negative effects misuse
+could have. 
+
+I considered the potential for bias in my analysis given that information on
+gender, age and customer type is included. Particularly on the issue of gender,
+I made it a priority  not to make assumptions that would reinforce gender 
+stereotypes as an explanation of my analysis. 
+
+Ageism is also an ethically sensitive area so it was important not to make
+negative assumptions or increase bais based on customers' age. 
+
+The type of customer, whether they were a subscriber or single use customer or, 
+based on their geolocation, they live in an area of viewed as less wealthy,
+could open the door for bais. It could be inferred that these users have less 
+income which should not impact any recommendations I have. 
+
+Therefore, it was essential that I recognised the potential for bais to provide
+a transparent and impartial report. 
+
+
+# Analysis
+
+## Data Distribution
+
+What does the data look like and what is the spread of the data based on
+gender, customer type and age? 
+
+### Gender
+
+From the data, we can see that 72% of bike hires are purchased by 
+'males', with 22% taken up by 'females' and a small 6% fraction of customers 
+with an 'unknown' gender. 
+
+```{r}
+nyc_bikes %>% 
+  ggplot(aes(factor(gender), fill = gender)) +
+  geom_bar(aes(y = (..count..)/sum(..count..)), show.legend = FALSE) +
+  scale_y_continuous(labels=scales::percent) +
+  geom_text(aes(y = ((..count..)/sum(..count..)), 
+            label = scales::percent((..count..)/sum(..count..))), 
+        stat = "count", vjust=2) +
+  theme_classic() +
+  scale_fill_tableau() +
+  labs(x = "Gender", y = "Total Hires", 
+       title = "Distribution of Total Hires by Gender")
+```
+
+### Customer Type
+
+Based on the distribution of customer type, we can see that most customers (93%)
+are paying subscribers compared to a small portion (7%) of clients making a one 
+time hire. 
+
+This is completely expected given the pricing system of bikes. Either $15 for a
+day or $15 a month (payable as a $185 lump sum for the year).
+
+```{r}
+nyc_bikes %>% 
+  ggplot(aes(factor(type), fill = type)) +
+  geom_bar(aes(y = (..count..)/sum(..count..)), show.legend = FALSE) +
+  scale_y_continuous(labels=scales::percent) +
+  geom_text(aes(y = ((..count..)/sum(..count..)), 
+            label = scales::percent((..count..)/sum(..count..))), 
+        stat = "count", vjust=2) +
+  theme_classic() +
+  scale_fill_tableau() +
+  labs(x = "Customer Type", y = "Total Hires", 
+       title = "Distribution of Total Hires by Customer Type")
+```
+
+### Age
+
+I have categorised age into three sections: 21-35, 36-49, 50+. The distribution 
+graph illustrates that the main bike hire group is 36-49 accounting for 41% of 
+hires. Followed closely by 21-35 with 35%, and the 50+ age group making up 24%. 
+
+```{r}
+nyc_bikes %>% 
+  ggplot(aes(factor(age_category), fill = age_category)) +
+  geom_bar(aes(y = (..count..)/sum(..count..)), show.legend = FALSE) +
+  scale_y_continuous(labels=scales::percent) +
+  geom_text(aes(y = ((..count..)/sum(..count..)), 
+            label = scales::percent((..count..)/sum(..count..))), 
+        stat = "count", vjust=2) +
+  theme_classic() +
+  scale_fill_tableau() +
+  labs(x = "Age Category", y = "Total Hires", 
+       title = "Distribution of Total Hires by Age Category")
+```
+
+## Bike Usage
+
+Given that there are only 10 bikes in the sample data, I thought it would be
+useful to understand the contribution of each bike to the total number of hires.
+We can see that most bikes contribute around or above 10%, however three bikes
+are contributing less than 6% which raises some efficiency concerns. 
+
+```{r}
+nyc_bikes %>% 
+  ggplot(aes(factor(bike_id), fill = bike_id)) +
+  geom_bar(aes(y = (..count..)/sum(..count..)), show.legend = FALSE) +
+  scale_y_continuous(labels=scales::percent) +
+  geom_text(aes(y = ((..count..)/sum(..count..)), 
+            label = scales::percent((..count..)/sum(..count..))), 
+        stat = "count", vjust=2) +
+  theme_classic() +
+  scale_fill_tableau() +
+  labs(x = "Bike", y = "Total Hires", 
+       title = "Distribution of Total Hires by Bike")
+```
+
+
+### Distribution Summary
+
+This distribution of data has shown that the typical customer of NYC Citi Bike
+is a middle to younger age males who are paying subscribers. The most evenly
+distributed data can be seen in age groups where there seems to be an even spread
+however, bike hiring decreases as age increases. 
+
+The largest disparities are evident with between male and female riders as well
+as an enormous difference between subscribers and non-subscribers. 
+
+Bike Contribution to total hires suggest that three bikes are not contributing as
+muuch as the rest which means we have to find better ways of making some bikes
+more available to customers. 
+
+These large differences may serve as a point of focus if we are to increase
+the overall number of bike rentals
+
+
+# Time Series Analysis
+
+This section will focus on how bike rentals change over time. I will look at
+monthly and weekly time intervals and discuss any seasonal or cyclical
+trends. 
+
+A sensitivity analysis will be conducted to differentiate between gender and age
+categories to analyse their specific impact on total bike hires over time. Given
+that we know from the previous section that 93% of customers are subscribers, I
+exercised discretion by not anaslying their impact given they represent close to
+the entire data sample. 
+
+## Monthly Analysis
+
+### Total Monthly Bike Hires
+
+There is a seasonal trend with bike hires that suggests people are less likely
+to hire a bike during the winter months demonstrated by a low of 112 rentals in
+February. Whereas, the summer months see a large number of people hiring bikes
+with a high of 728 in August. 
+```{r}
+
+# line graph that shows trend of bike hires month to month
+
+nyc_bikes %>%
+  index_by(month) %>% 
+  mutate(total_hires = n()) %>% 
+  ggplot(aes(month, total_hires)) +
+  geom_point(show.legend = FALSE) +
+  geom_line(group = 1) +
+  geom_label(aes(label = total_hires)) +
+  theme_classic() +
+  labs(x = "Month", y = "Total Hires", title = "Total Number of Monthly Hires")
+
+```
+
+### Total Monthly Bike Hires by Gender
+
+When we look at total hires by gender the data follows a similar trend overall
+graph. The gulf between male and female users is depicted accurately, although
+we do see a 1000% increase from lowest to highest rentals per month for females
+compared to approximately 500% for males. 
+
+```{r}
+# line graph that shows trend of bike hires month to month by gender
+
+nyc_bikes %>%
+  group_by(month, gender) %>% 
+  mutate(total_hires = n()) %>% 
+  ggplot(aes(month, total_hires, colour = gender, group = gender)) +
+  geom_point(show.legend = FALSE) +
+  geom_line() +
+  stat_peaks(span = NULL,
+             strict = TRUE,
+             geom = "text_s",
+             mapping = aes(label = paste(after_stat(y.label))),
+             y.label.fmt = " Max = %.0f",
+             segment.colour = "black",
+             arrow = grid::arrow(length = unit(0.1, "inches")),
+             position = position_nudge_keep(x = 1, y = 20),
+             hjust = 0) +
+  stat_valleys(span = NULL,
+             strict = TRUE,
+             geom = "text_s",
+             mapping = aes(label = paste(after_stat(y.label))),
+             y.label.fmt = " Min = %.0f",
+             segment.colour = "black",
+             arrow = grid::arrow(length = unit(0.1, "inches")),
+             position = position_nudge_keep(x = -0.2, y = -30),
+               hjust = 1) +
+  theme_classic() +
+  scale_color_tableau() +
+  labs(x = "Month", y = "Total Hires", 
+       title = "Total Number of Monthly Hires by Gender")
+```
+
+### Total Monthly Bike Hires by Age Category
+
+Looking at bike hires by age again outlines the same seasonal trend with the 
+biggest drop off for each age range coming between August and September. This
+suggests more could be done to encourage customers of all ages to continue
+cycling into autumn. 
+
+
+```{r}
+# line graph that shows trend of bike hires month to month by age category
+
+nyc_bikes %>%
+  group_by(month, age_category) %>% 
+  mutate(total_hires = n()) %>% 
+  ggplot(aes(month, total_hires, colour = age_category, group = age_category)) +
+  geom_point() +
+  geom_line() +
+  stat_peaks(span = NULL,
+             strict = TRUE,
+             geom = "text_s",
+             mapping = aes(label = paste(after_stat(y.label))),
+             y.label.fmt = " Max = %.0f",
+             segment.colour = "black",
+             arrow = grid::arrow(length = unit(0.1, "inches")),
+             position = position_nudge_keep(x = 1, y = 20),
+             hjust = 0) +
+  stat_valleys(span = NULL,
+             strict = TRUE,
+             geom = "text_s",
+             mapping = aes(label = paste(after_stat(y.label))),
+             y.label.fmt = " Min = %.0f",
+             segment.colour = "black",
+             arrow = grid::arrow(length = unit(0.1, "inches")),
+             position = position_nudge_keep(x = 1, y = -30),
+               hjust = 1) +
+  theme_classic() +
+  scale_colour_tableau() +
+  labs(x = "Month", y = "Total Hires", title = "Total Number of Monthly Hires")
+```
+
+## Weekday Analysis
+
+### Total Weekday Bike Hires
+
+The total number of weekday hires indicates that the majority of customers use 
+the bikes during the week, with the lowest number of hires coming on both 
+Saturday (523) and Sunday (453). 
+
+This suggests most people use the bikes to get to and from work. Therefore, 
+more can be done to encourage customers to hire bikes at the weekend. 
+
+```{r}
+nyc_bikes %>%
+  index_by(day) %>% 
+  summarise(total_hires = n()) %>% 
+  ggplot(aes(day, total_hires)) +
+  geom_point() +
+  geom_line(group = 1) +
+  geom_label(aes(label = total_hires)) +
+  theme_classic() +
+  labs(x = "Weekday", y = "Total Hires", title = "Total Number of Weekday Hires")
+```
+
+### Total Weekday Hires by Gender
+
+Both Male and Female follow the same trend of having the maximum amount of hires
+on Tuesday and minimum amount on a Sunday. Whereas 'unknown' gender has a high 
+of 65 on Sunday and low of 27 on Thursday
+
+```{r}
+nyc_bikes %>%
+  group_by(day, gender) %>% 
+  mutate(total_hires = n()) %>% 
+  ggplot(aes(day, total_hires, group = gender, colour = gender)) +
+  geom_point() +
+  geom_line() +
+  stat_peaks(span = NULL,
+             strict = TRUE,
+             geom = "text_s",
+             mapping = aes(label = paste(after_stat(y.label))),
+             y.label.fmt = " Max = %.0f",
+             segment.colour = "black",
+             arrow = grid::arrow(length = unit(0.1, "inches")),
+             position = position_nudge_keep(x = 1, y = 20),
+             hjust = 0) +
+  stat_valleys(span = NULL,
+             strict = TRUE,
+             geom = "text_s",
+             mapping = aes(label = paste(after_stat(y.label))),
+             y.label.fmt = " Min = %.0f",
+             segment.colour = "black",
+             arrow = grid::arrow(length = unit(0.1, "inches")),
+             position = position_nudge_keep(x = 0.3, y = -20),
+               hjust = 1) +
+  theme_classic() +
+  scale_colour_tableau() +
+  labs(x = "Weekday", y = "Total Hires", title = "Total Number of Weekday Hires")
+```
+
+### Total Weekday Hires by Age
+
+A similar trend again emerges, the two largest age ranges, 21-35 and 36-49, 
+both have their highest numbers on Tuesday and fewest on Sunday. Whereas, 
+50+ experience their most successful day on friday and least successful the
+following day on Saturday. 
+
+```{r}
+nyc_bikes %>%
+  group_by(day, age_category) %>% 
+  mutate(total_hires = n()) %>% 
+  ggplot(aes(day, total_hires, group = age_category, colour = age_category)) +
+  geom_point() +
+  geom_line() +
+  stat_peaks(span = NULL,
+             strict = TRUE,
+             geom = "text_s",
+             mapping = aes(label = paste(after_stat(y.label))),
+             y.label.fmt = " Max = %.0f",
+             segment.colour = "black",
+             arrow = grid::arrow(length = unit(0.1, "inches")),
+             position = position_nudge_keep(x = 0.3, y = 5),
+             hjust = 0) +
+  stat_valleys(span = NULL,
+             strict = TRUE,
+             geom = "text_s",
+             mapping = aes(label = paste(after_stat(y.label))),
+             y.label.fmt = " Min = %.0f",
+             segment.colour = "black",
+             arrow = grid::arrow(length = unit(0.1, "inches")),
+             position = position_nudge_keep(x = 0.3, y = -15),
+               hjust = 1) +
+  theme_classic() +
+  scale_colour_tableau() +
+  labs(x = "Weekday", y = "Total Hires", title = "Total Number of Weekday Hires by Age Category")
+```
+
+### Time Series Summary
+
+The data has illustrated the seasonality of bike hires on a monthly and weekly
+basis. The monthly trend shows that bike hiring is more popular in the summer
+when the weather is better. Likewise, weekly trends show customers prefer to 
+cycle Monday to Friday, likely due to people hiring bikes to travel to and from 
+work. 
+
+
+# Geospatial Analysis
+
+This section will look at the location of bike hire start and end points. 
+This is important to understanding what areas are influencing bike hires and 
+will allow us to identify how we can expand to other areas and increase bike 
+usage and, therefore, revenues. 
+
+## Spread of Start Points
+
+The geo-locations of bike hire start points indicate that all start in and around
+Jersey City, west of Manhattan. This may be because of the data sample in that
+it only looks at data for New Jersey. 
+
+However, because all rides start within a small distance of each other, it limits
+the outreach bikes have on the rest of the city, hence, we are not able to target
+wider array of customers which would increase bike hires. 
+
+```{r}
+nyc_bikes %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(lng = ~start_long, lat = ~start_lat,
+                   clusterOptions = markerClusterOptions(maxClusterRadius = 50))
+```
+
+## Spread of End Points
+
+The spread of the end points further emphasises the need to expand to other
+areas so we can attract a larger consumer base. The data is concentrated around
+specific stations, but it is clear to increase the number of bike hires more
+work must be done to expand into other New York areas. 
+
+The end points do not differ much from the start points indicating short ride 
+times which enhances our understanding that these bikes are used for transport 
+to work rather than for leisure. 
+
+```{r}
+nyc_bikes %>% 
+  leaflet() %>% 
+  addTiles() %>% 
+  addCircleMarkers(lng = ~end_long, lat = ~end_lat,
+                   clusterOptions = markerClusterOptions(maxClusterRadius = 50))
+```
+
+## Average Ride Times
+
+### Monthly
+
+From the geo-locations of start and stop points, we can calculate the average 
+ride time for each month. We can see that people generally don't cycle too long
+during the winter compared with the summer. 
+
+This tells us people are cycling at a small frequency and for shorter duration
+during the winter. Can we offer favorable winter deals? 
+
+```{r}
+nyc_bikes %>%
+  filter(ride_time < 5000) %>% 
+  index_by(month) %>% 
+  summarise(avg_ride_time = round(mean(ride_time),digits = 2)) %>% 
+  ggplot(aes(month, avg_ride_time)) +
+  geom_point() +
+  geom_line(group = 1) +
+  geom_label(aes(label = avg_ride_time)) +
+  theme_classic() +
+  labs(x = "Month", y = "Average Ride Time", title = "Monthly Average Ride Time (Minutes)")
+```
+
+### Weekly
+
+As expected, people spend more time cycling at the weekend, can we increase
+the amount of time users spend on bikes during the week? 
+
+```{r}
+nyc_bikes %>%
+  filter(ride_time < 120) %>% 
+  index_by(day) %>% 
+  summarise(avg_ride_time = round(mean(ride_time),digits = 2)) %>% 
+  ggplot(aes(day, avg_ride_time)) +
+  geom_point() +
+  geom_line(group = 1) +
+  geom_label(aes(label = avg_ride_time)) +
+  theme_classic() +
+  labs(x = "Weekday", y = "Average Ride Time", 
+       title = "Weekday Average Rider Time (Minutes)")
+```
+
+
+
+## Geospatial Summary
+
+The geospatial data has presented an insight into the short term nature of 
+bike hires. Because bikes are rarely taken beyond New Jersey it is hard to target
+a wider consumer base because the bikes are simply not reaching enough people. 
+If Bikes entered into new areas, it is likely there would be an upswing in 
+bike rentals. 
+
+The average times data offer increased evidence to the seasonality of bike hires, 
+need to adopt pricing strategies which would see people taking up cycling during
+winter and for longer periods during the week. 
+
+
+# Forecast 
+
+To see how bike rentals will fare in the future, I have created a 26 week
+forecast of total bike hires. 
+
+## Forecast Analysis
+
+The forecast shows how the cyclical nature of bike hires are due to continue into
+the new year. As the warmer months progress, the more customers will be 
+encouraged to rent bikes as shown by the 'snaive' model line. 
+
+```{r}
+weekly_trend <- nyc_bikes %>% 
+  index_by(week = yearweek(start_time)) %>% 
+  summarise(total_hires = n())
+
+week_fit <- weekly_trend %>% 
+  model(
+     snaive = SNAIVE(total_hires),
+    mean_model = MEAN(total_hires)
+  )
+
+forecast_week <- week_fit %>% 
+  fabletools::forecast(h = 25)
+forecast_week
+
+forecast_week %>%
+  autoplot(weekly_trend, level = NULL) +
+  ggtitle("26 Week Forecast for Total Weekly Hires ") +
+  xlab("Week") +
+  guides(colour = guide_legend(title = "Forecast")) +
+  theme_classic()
+```
+
+# Conclusion
+
+Key Points to increase bike hires and revenue:
+
+- Need to increase usage among female and non-subscriber customers so we can 
+attract a wider consumer base
+- Increase the efficiency of bikes being used 
+- Trends from time series show that winter months see a reduction in number
+of hires
+- Weekly trends show weekdays are the most popular for hires whereas numbers 
+fall at the weekends
+- Middle-aged to young adult users tend to follow the same hire patterns. The 
+50+ category numbers do not rise to the same levels midweek
+- Geo spatial analysis indicates bike clustering around the same locations - 
+would be good to have more data to explore how we can expand bike usage to other
+areas. 
+- short ride times suggest bike for work rather than leisure. 
+- Forecast shows cyclical trends in data
+
+
+# Recommendations 
+
+- Adopt better pricing strategies to target a wider consumer base
+  - attracted more female riders, more non-subscribers
+
+- increase the number of stations available to increase bike efficiency and 
+enhance bike hire reach to other areas. 

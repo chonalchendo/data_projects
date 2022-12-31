@@ -1,0 +1,7 @@
+"0","```r
+library(tidyverse)
+library(janitor)
+library(ggfortify)
+library(GGally)
+library(modelr)
+```"

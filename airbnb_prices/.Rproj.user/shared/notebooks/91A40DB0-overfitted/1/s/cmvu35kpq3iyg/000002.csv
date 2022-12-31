@@ -1,0 +1,6 @@
+"0","```r
+model_wellfit <- lm(savings ~ salary + age + retired, 
+                    data = savings)
+
+summary(model_wellfit)
+```"
