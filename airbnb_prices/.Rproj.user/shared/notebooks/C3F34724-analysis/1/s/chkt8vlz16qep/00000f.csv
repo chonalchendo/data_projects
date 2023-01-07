@@ -1,6 +1,0 @@
-"0","mse_test <- mean((predictions_test$pred - test$log_price)**2)"
-"0","mse_test"
-"1","[1]"
-"1"," 0.2075415"
-"1","
-"

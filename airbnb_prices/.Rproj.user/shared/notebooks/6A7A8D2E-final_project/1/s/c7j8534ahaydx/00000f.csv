@@ -1,2 +1,0 @@
-"0","model_4 <- lm(log_price ~ longitude + neighbourhood_group + room_type + availability_365,"
-"0","              data = prices_reg_df)"

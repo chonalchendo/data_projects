@@ -1,6 +1,0 @@
-"0","predictions_test <- test %>%
-  add_predictions(model_6) %>%
-  select(log_price, pred)
-"
-"2","Error in select(., log_price, pred) : unused arguments (log_price, pred)
-"

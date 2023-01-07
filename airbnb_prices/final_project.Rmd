@@ -1,0 +1,1246 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(lubridate)
+library(GGally)
+library(ggfortify)
+library(modelr)
+library(tidytext)
+library(wordcloud)
+library(leaflet)
+library(ggridges)
+library(ggthemes)
+library(relaimpo)
+library(tm)
+library(SnowballC)
+library(wordcloud)
+library(RColorBrewer)
+```
+
+
+# Introduction
+
+## About the Data
+
+The data is about New York City Airbnb listings in 2019. 
+
+The data includes information on, prices, New York neighbourhoods and room types,
+to name a few. Geospatial coordinates are also present, offering valuable insight
+into Airbnb locations. 
+
+## Project Objectives
+
+Primary aim:
+- Analyse the determinants of airbnb prices
+  - Offer recommendations for customers booking airbnbs
+  - Provide insights for hosts - adopt an appropriate pricing strategy
+  
+## Overview
+
+- Ethical Considerations
+- Data Cleaning and Wrangling
+- Exploratory Analysis
+- Text mining
+- Geo-spatial Analysis
+- Model Building
+  - Univariate Regression
+  - Multivariate Regression
+- Analysis Conclusions
+
+
+```{r}
+prices <- read_csv("raw_data/AB_NYC_2019.csv") %>% clean_names()
+```
+
+
+# Ethical Considerations
+
+The data contains information on host names and unique IDs. To avoid any ethical
+issues I chose to remove these variables. 
+
+- Reduce bias
+- Follow law 
+- ensure consumer trust
+
+# Clean Data
+
+## Check Missing Values
+
+```{r}
+# check for missing values
+prices %>% 
+  # return total missing values in each column
+  summarise(
+    across(
+      .cols = everything(),
+      .fns = ~sum(is.na(.x))
+    )
+  ) %>% 
+  # select columns that have missing values
+  dplyr::select(c(name, host_name, last_review, reviews_per_month))
+```
+Many missing values in last_review and reviews_per_month (10052 rows)
+
+- last_review will be dropped as inconsequential variable
+- values dropped from reviews_per_month
+  - coalescing with mean may warp data too much 
+
+
+## Data Cleaning
+
+```{r}
+prices_df <- prices %>% 
+  # drop host names and host_id (ethical)
+  dplyr::select(-c(host_name, host_id, id)) %>% 
+  # take out month from last_review 
+  mutate(last_review_month = month(last_review, label = TRUE),
+         # take name length
+         name_length = str_length(name),
+         # impute missing values with average
+         reviews_per_month = coalesce(reviews_per_month, 
+                                      mean(reviews_per_month, na.rm = TRUE))
+         ) %>% 
+  # remove last_review column
+  dplyr::select(-last_review)
+
+# check for missing values
+prices_df %>% 
+  # return total missing values in each column
+  summarise(
+    across(
+      .cols = everything(),
+      .fns = ~sum(is.na(.x))
+    )
+  ) %>% 
+  # columns that returned missing values
+  dplyr::select(c(name, last_review_month, name_length))
+
+
+# drop missing values
+prices_df <- prices_df %>% 
+  drop_na()
+
+
+
+```
+
+
+# Exploratory Analysis
+
+## Total Number of Bookings per Borough
+
+```{r}
+# number of bookings per borough
+prices_df %>% 
+  # group by neighbourhood
+  group_by(neighbourhood_group) %>% 
+  # return total bookings for each neighbourhood
+  summarise(num_bookings = n()) %>% 
+  # arrange from highest to lowest
+  arrange(desc(num_bookings)) %>% 
+  # create a bar chart to visualise result 
+  ggplot(aes(reorder(neighbourhood_group, num_bookings), num_bookings, 
+             fill = neighbourhood_group)) +
+  # specify bar chart
+  geom_col(show.legend = FALSE) +
+  # annotate each bar
+  geom_label(mapping = aes(label = num_bookings), size = 3, 
+             fill = "#F5FFFA", fontface = "bold", hjust = 0.5) +
+  # add theme
+  theme_classic() +
+  # titles
+  labs(x = "Borough", y = "Number of Bookings", 
+       title = "Total Number of Bookings per Borough")
+```
+Manhattan and Brooklyn both by far the most popular areas for Airbnb listings.
+
+Two central Boroughs which may indicate the main reason people book is for 
+holidays / Tourism. 
+
+
+## Average Price per Neighbourhood Group
+
+```{r}
+
+# Average Price per Room
+price_per_room <- prices_df %>% 
+  # group by room_type
+  group_by(room_type) %>% 
+  # return average price per room_type
+  summarise(avg_price = mean(price)) %>% 
+  # create bar chart to visualise result
+  ggplot(aes(room_type, avg_price, fill = room_type)) +
+  # specify bar chart
+  geom_col(show.legend = FALSE) +
+  # annotate each bar
+  geom_label(mapping = aes(label = round(avg_price, 2)), size = 6, 
+             fill = "#F5FFFA", fontface = "bold", 
+             # position change to make sure label stays on page
+             position = position_stack(vjust = 0.9)) +
+  # add theme
+  theme_classic() +
+  # titles
+  labs(x = "Room Type", y = "Average Price ($)", 
+       title = "Average Price by Room Type")
+
+
+# Average price per neighbourhood group
+price_room_borough <- prices_df %>% 
+  # group by both neighbourhood and room_type
+  group_by(neighbourhood_group, room_type) %>% 
+  # return average price for each room type in each neighbourhood
+  summarise(avg_price = mean(price)) %>% 
+  # sort from highest to lowest price
+  arrange(desc(avg_price)) %>% 
+  # create bar chart
+  ggplot(aes(reorder(neighbourhood_group, avg_price), avg_price, 
+             fill = room_type)) +
+  # specify bar chart
+  geom_col(show.legend = FALSE) + 
+  # annotate bars
+  geom_label(mapping = aes(label = round(avg_price, 2)), size = 2.5, 
+             fill = "#F5FFFA", fontface = "bold", hjust = 0.5, 
+             # position change to make sure label stays on page
+             position = position_stack(vjust = 0.9)) +
+  # theme
+  theme_classic() +
+  # titles
+  labs(x = "New York Boroughs", y = "Average Price ($)", 
+       title = "Average Price per Borough by Room Type") + 
+  # split into room_types
+  facet_wrap(~room_type) +
+  # flip x and y axis
+  coord_flip()
+
+# plot both visualisations together
+cowplot::plot_grid(price_per_room, price_room_borough, nrow = 2)
+```
+
+
+## The 10 most expensive and cheapest New York Districts
+
+```{r}
+# Top 10 most expensive districts on average
+a <- prices_df %>% 
+  # group by individual districts within neighbourhoods
+  group_by(neighbourhood) %>% 
+  # return average price
+  summarise(avg_price = mean(price)) %>% 
+  # sort from highest to lowest
+  arrange(desc(avg_price)) %>% 
+  # return the top 10 (out of 218)
+  slice(1:10) %>% 
+  # create bar plot
+  ggplot(aes(reorder(neighbourhood, avg_price), avg_price, 
+             fill = neighbourhood)) + 
+  # specify bar chart
+  geom_col(show.legend = FALSE) +
+  # annotate bars 
+  geom_label(mapping = aes(label = round(avg_price, 2)), size = 3, 
+             fill = "#F5FFFA", fontface = "bold") +
+  # theme
+  theme_classic() +
+  # change x-axis label position
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.95, hjust = 1)) +
+  # titles
+  labs(x = "Neighbourhood", y = "Average Price ($)", 
+       title = "The 10 Most Expensive Districts on Average")
+
+# top 10 least expensive districts on average
+b <- prices_df %>% 
+  # group by individual districts within neighbourhoods
+  group_by(neighbourhood) %>% 
+  # return average prices
+  summarise(avg_price = mean(price)) %>% 
+  # arrange from lowest to highest
+  arrange(avg_price) %>% 
+  # return bottom 10 prices
+  slice(1:10) %>% 
+  # create bar chart
+  ggplot(aes(reorder(neighbourhood, avg_price), avg_price, 
+             fill = neighbourhood)) + 
+  # specify bar chart
+  geom_col(show.legend = FALSE) +
+  # annotate bars
+  geom_label(mapping = aes(label = round(avg_price, 2)), size = 3, 
+             fill = "#F5FFFA", fontface = "bold") +
+  # theme
+  theme_classic() +
+  # change x-axis label position
+  theme(axis.text.x = element_text(angle = 30, vjust = 0.95, hjust = 1)) +
+  # titles
+  labs(x = "Neighbourhood", y = "Average Price ($)", 
+       title = "The 10 Least Expensive Districts on Average")
+
+# add plots into the same output
+cowplot::plot_grid(a, b, nrow=2)
+```
+
+The 10 most expensive districts are all located in Manhattan apart from, 
+Neponsit (Queens) and WillowBrook (Staten Island)
+
+The majority of the 10 least expensive districts reside in the Bronx, State 
+Island and Queens
+
+## Average Reviews by Last Month Review Submitted
+
+```{r}
+# Average Reviews per Month by Last Month review was left
+prices_df %>% 
+  # change last_review_month to a factor 
+  mutate(last_review_month = as_factor(last_review_month)) %>% 
+  # group by last_review_month
+  group_by(last_review_month) %>% 
+  # return the average_reviews_per_month 
+  summarise(n = mean(reviews_per_month)) %>% 
+  # create a bar graph
+  ggplot(aes(last_review_month, n, fill = last_review_month)) + 
+  # specify bar graph
+  geom_col(show.legend = FALSE) +
+  # theme
+  theme_bw() +
+  # titles
+  labs(x = "Last Review Month", y = "Average Reviews per Month", 
+       title = "Average Reviews by Last Month Review Submitted")
+```
+
+Suggests that most people are leaving reviews in the summer, indicating some
+seasonality to Airbnb booking in New York. 
+
+
+# Price Density by Area
+
+```{r}
+# price density by New York Borough
+ggplot(
+  # create plot for price less than $500
+  subset(prices_df, price < 500),aes(x = price)) +
+  # specify density plot
+  geom_density(
+    mapping = aes(fill = neighbourhood_group), 
+    bandwidth = 100, alpha = 1, size = 0.5, show.legend = FALSE) +
+  # theme
+  theme_bw() +
+  # show individual density plots for boroughs
+  facet_wrap(~neighbourhood_group) +
+  # titles
+  labs(x = "Price", y = "Density", title = "Price Density by Borough")
+```
+
+Pricing density plot reveals that boroughs with fewer amount of bookings (Queens,
+Staten Island and Bronx) have a higher density of lower prices 
+
+Most common areas (Mahattan and Brooklyn) have a wider density plot indicating 
+that prices vary more. 
+
+
+# Text Mining
+
+I want to find the words that are associated with different price ranges. 
+
+So I need to create new variables which classify the price range of each
+airbnb
+
+we will define price ranges based around the average price for total bookings
+
+```{r}
+# return mean_price of Airbnbs
+prices_df %>% 
+  summarise(mean_price = mean(price))
+```
+mean price is $142 therefore, low will be less than $100, medium will be 
+between $100 - $200, high will be $200 - $300 and very high will be greater than
+$300
+
+```{r}
+# create new categorical variable for price
+prices_new <- prices_df %>% 
+  mutate(price_class = case_when(
+    price < 100 ~ "Low", 
+    price < 200 ~ "Medium", 
+    price < 300 ~ "High",
+    TRUE ~ "Very High"
+  ))
+  
+```
+
+
+
+## High/Very High Price Range
+
+
+```{r}
+# words associated with high prices
+high_price_words <- prices_new %>% 
+  # filter for High and Very High price classes 
+  filter(price_class %in% c("High", "Very High")) %>% 
+  # take individual words from the name column
+  unnest_tokens(word, name) %>% 
+  # take out stop_words 
+  anti_join(stop_words) %>% 
+  # select word column
+  dplyr::select(word)
+
+# most common words
+sorted_hp_words <- high_price_words %>%
+  # sort most common words
+  count(word, sort = TRUE)
+
+# create word cloud for high/very high price Airbnbs
+wordcloud(
+  # words to use for word cloud 
+  words = sorted_hp_words$word,
+  # number of times these words appear
+  freq = sorted_hp_words$n, 
+  # maximum number of words used
+  max.words=60, 
+  # no random order
+  random.order=FALSE, 
+  # proportion of words with a 90 degree angle
+  rot.per=0.35, 
+  # add colour palette
+  colors=brewer.pal(8, "Spectral"))
+
+```
+
+
+Words that stand out from wordcloud include: bedroom, apartment, village, luxury, 
+location, Manhattan, spacious, park
+- start to understand what kind of Airbnbs are being advertised for high prices
+
+
+## Low Price Range
+
+
+```{r}
+# words associated with low prices
+low_price_words <- prices_new %>% 
+  # filter for rows associated with low prices
+  filter(price_class %in% "Low") %>% 
+  # take words from name column
+  unnest_tokens(word, name) %>% 
+  # remove stop words
+  anti_join(stop_words) %>% 
+  # select word column
+  dplyr::select(word)
+
+# most common words
+sorted_lp_words <- low_price_words %>% 
+  # sort most common words
+  count(word, sort = TRUE)
+
+wordcloud(
+  # select words 
+  words = sorted_lp_words$word, 
+  # number of times these words appear
+  freq = sorted_lp_words$n, 
+  # maximum number of words in cloud
+  max.words=60, 
+  # no random order
+  random.order=FALSE, 
+  # proportion of words rotated
+  rot.per=0.35, 
+  # colour palette
+  colors=brewer.pal(8, "Spectral"))
+```
+
+when we look at the word cloud of the low price range, we see some similarities
+with the high price range indicating owners are trying to sell the property as
+up market. 
+
+Big emphasis on property being "private" which is likely to be a big concern
+for people when not paying that much. In contrast, privacy is a given when paying
+for high end accommodation. 
+
+
+
+## Medium Price Range
+
+```{r}
+# words associated with medium price range (around the average)
+medium_price_words <- prices_new %>% 
+  # filter rows associated with medium price range
+  filter(price_class %in% "Medium") %>% 
+  # select words from name column
+  unnest_tokens(word, name) %>% 
+  # remove stop words
+  anti_join(stop_words) %>% 
+  # select words
+  dplyr::select(word)
+
+
+# most common words
+sorted_mp_words <- medium_price_words %>% 
+  # sort words
+  count(word, sort = TRUE)
+
+
+# word cloud for medium price range
+wordcloud(
+  # words to use
+  words = sorted_mp_words$word, 
+  # frequency words appear
+  freq = sorted_mp_words$n, 
+  # maximum number of words
+  max.words=60, 
+  # random order = FALSE --> makes it neat
+  random.order=FALSE, 
+  # proportion of words rotated
+  rot.per=0.35, 
+  # colour palette
+  colors=brewer.pal(8, "Spectral"))
+```
+
+Not a tremendous amount of difference here, probably as expected it takes a 
+balance between low and high price ranges highlighting privacy as important but 
+also more emphasis on location. 
+
+
+# Most Popular Bigrams used in Airbnb Name
+
+Analysis of the most popular word combinations
+
+```{r}
+# Obtain the 2 word bigrams
+bigram_names <- prices_new %>% 
+  unnest_tokens(bigram, name, token = "ngrams", n = 2)
+
+# Separate into two words
+bigrams_separated <- bigram_names %>% 
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+# filter the words for stop words
+bigrams_filtered <- bigrams_separated %>% 
+  # filter words NOT IN stop words
+  filter(!word1 %in% stop_words$word) %>% 
+  filter(!word2 %in% stop_words$word)
+
+# count and sort the most popular words
+bigrams_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+# most popular bigrams graph
+bigrams_counts %>% 
+  # filter out numbers
+  filter(!str_detect(word1, "[0-9]")) %>% 
+  # unite both word columns
+  unite(col = "bigrams", c("word1", "word2"), sep = " ", remove = TRUE) %>% 
+  # get top 10
+  slice(1:10) %>% 
+  # visualise
+  ggplot(aes(reorder(bigrams, n), n, fill = bigrams)) + 
+  # specify bar graph
+  geom_col(show.legend = FALSE) +
+  # flip x and y-axis
+  coord_flip() +
+  # theme
+  theme_bw() + 
+  # annotate each bar
+  geom_label(mapping = aes(label = n), size = 3, 
+             fill = "#F5FFFA", fontface = "bold") +
+  # titles
+  labs(y = "Number of Bigram Mentions", x = "Bigram", 
+       title = "Most Popular Bigrams in Airbnb Name")
+
+```
+
+Hosts emphasis on location is a common strategy to entice consumers
+
+consumers want to be closer to famous landmarks. 
+
+
+# Geo-spatial Analysis
+
+
+Can we see if the geo-spatial backs up the word cloud and bigram analysis of 
+emphasis on location for medium and low price ranges
+
+## Density of New York Boroughs
+
+
+```{r}
+# Density of New York Boroughs
+prices_new %>% 
+  # plot longitude and latitude
+  ggplot(aes(longitude, latitude)) +
+  # specify density plot - has to be geom_density2d
+  # specify density by neighbourhoods
+  geom_density2d(aes(colour = neighbourhood_group)) + 
+  # theme
+  theme_bw() +
+  # title
+  labs(title = "Density of Boroughs")
+```
+
+## Density of Price Class
+
+```{r}
+# Density of Price Class
+prices_new %>% 
+  # plot longitude and latitude
+  ggplot(aes(longitude, latitude)) +
+  # specify density by price_class
+  geom_density2d(aes(colour = price_class)) + 
+  # theme
+  theme_bw() +
+  # titles
+  labs(title = "Density of Price Class")
+
+```
+
+
+can see the spread of prices based on the area, can see that lower prices 
+tend to located to the perimeter of New York, indicating that location towards
+centre of Manhattan is a large determinant of price.
+
+
+## Leaflet Map
+
+```{r}
+# define colour palette for map
+ pal <- colorFactor(
+   # select own colour scheme
+   palette = c("orange", "white", "yellow", "red"), 
+   # select variable for colour palette
+   domain = prices_df$price_class)
+
+# leaflet map
+leaflet(data = prices_new) %>% 
+  # add dark background for map
+  addProviderTiles(providers$CartoDB.DarkMatterNoLabels) %>% 
+  # add marker for each Airbnb based on price_class
+  addCircleMarkers(~longitude, ~latitude, color = ~pal(price_class), weight = 1, 
+                   radius=1, fillOpacity = 0.1, opacity = 0.1) %>%
+  # add legend for colour associated with price_class
+  addLegend("bottomright", pal = pal, values = ~price_class,
+            title = "Price Class",
+            opacity = 1
+  ) 
+```
+
+
+Leaflet map shows the contrast between extremities and city centre, evidently
+much higher prices in the city. 
+
+__Summary__
+
+Prices are being impacted by:
+- location
+- type of accommodation 
+
+
+# Model Building - Linear Regression
+
+Approach: 
+- manual
+- good way to become familiar with data
+- avoid over or under fitting the model
+
+Goals of the model: 
+
+- A well fit model that reasonably explains variance in price
+- satisfies assumptions needed to validate model
+- Be able to output statistically significant coefficients for consumer/host
+recommendations
+
+
+## Distribution of Price
+
+Dependent variable: Price
+
+Important to investigate its distribution as it may require a transformation to 
+create a better fit for the model
+
+
+```{r}
+# distribution of price 
+prices_new %>% 
+  # select price for x-axis
+  ggplot(aes(price)) +
+  # specify histogram
+  geom_histogram(bins = 100, aes(y = ..density..), fill = "red") + 
+  # add in a density plot
+  geom_density(alpha = 0.2, fill = "red") +
+  # theme
+  theme_bw() +
+  # title
+  labs(title = "Distribution of Price")
+```
+
+Price is heavily skewed to the right indicates a log transformation is needed
+to get a normal bell shaped distribution
+
+```{r}
+# mean price 
+mean_price <- prices_new %>% 
+  summarise(m_price = mean(price))
+
+
+# log bell shaped distribution 
+prices_new %>% 
+  # set price on x-axis as a natural logarithm
+  ggplot(aes(log(price))) +
+  # specify histogram
+  geom_histogram(bins = 40, aes(y = ..density..), fill = "red") + 
+  # insert density area
+  geom_density(alpha = 0.2, fill = "red") +
+  # insert line to indicate average
+  geom_vline(data = mean_price, aes(xintercept =  log(m_price)), size = 1, 
+             linetype = 2) +
+  # theme
+  theme_bw() +
+  # title
+  labs(title = "Distribution of log(price)")
+```
+
+
+
+## Finalising Data for Model
+
+Dropped variables:
+
+- 'name' - use dummy variables for important words and bigrams instead
+- 'neighbourhood' - use the categorical variable for five New York Boroughs
+- 'price_class' - high correlated with dependent variable price
+
+Dummy variables created from text analysis: 
+
+- 'apartment'
+- 'private'
+- 'central park'
+
+```{r}
+prices_reg_df <- prices_new %>% 
+  # create dummy variables for chosen words that may impact price
+  mutate(apartment_ad = if_else(str_detect(name, "[Aa]partment"), "YES", "NO"),
+         private_ad = if_else(str_detect(name, "[Pp]rivate"), "YES", "NO"),
+         central_park_ad = if_else(str_detect(name, "[Cc]entral [Pp]ark"), 
+                                   "YES", "NO"),
+         ) %>% 
+  # remove variables not considered for model
+  dplyr::select(-c(name, neighbourhood, price_class)) %>% 
+  # log transform price
+  mutate(log_price = log(price + 1)) %>% 
+  # bring price to the front
+  dplyr::select(log_price,price, everything()) %>% 
+  # change all character variables to factor
+  mutate(across(.cols = is.character, 
+                .fns = as_factor)) %>% 
+  # remove original price variable
+  dplyr::select(-price)
+  
+```
+
+
+Check alias() function to check for multicollinearity 
+
+```{r}
+# check for multicollinearity
+alias(lm(log_price ~ ., data = prices_reg_df))
+```
+
+Data is now ready to be used in regression analysis
+
+
+
+Use ggpairs() to investigate which variables are highly correlated with price.
+
+Data set is large so relationship analysis will be divided into numeric and 
+non-numeric datatypes
+
+```{r message=FALSE}
+# select variables that are numeric
+variable_numeric <- prices_reg_df %>%
+  select_if(is.numeric)
+
+# ggpairs with only numeric variables
+ggpairs(variable_numeric)
+```
+
+
+```{r message=FALSE}
+# select variables that are categorical 
+variable_nonnumeric <- prices_reg_df %>%
+  # use function to return variables that are categorical
+  select_if(function(x) !is.numeric(x))
+
+# need to add log_price to non-numeric data 
+variable_nonnumeric$log_price <- prices_reg_df$log_price
+
+# non-numeric ggpairs
+ggpairs(variable_nonnumeric)
+```
+
+
+## Univariate Regression
+
+Largest correlation with price: longitude
+- negatively correlated by 0.155
+- statistically significant at the 0.001 level of significance. 
+
+The non-numeric ggpairs suggests that several variables will be able to explain 
+price variance.  
+
+### relationship between log(price) and longitude
+
+```{r}
+# scatter plot for log_price ~ longitude
+prices_reg_df %>% 
+  ggplot(aes(longitude, log_price)) + 
+  # specify scatter plot
+  geom_point() + 
+  # add in linear model line of best fit
+  geom_smooth(method = "lm", se = FALSE, colour = "red") +
+  # theme
+  theme_bw() + 
+  labs(title = "Relationship between log(price) and longitude")
+```
+create model
+
+```{r}
+# linear regression model
+model_1 <- lm(log_price ~ longitude, data = prices_reg_df)
+```
+
+
+```{r}
+# check regression diagnostics
+autoplot(model_1)
+```
+
+
+### Regression Diagnostics 
+
+graph 1 (population) - tell us most observations are independence, blue line
+declines at the end indicating other chunk of observations are not independently
+distributed. Need another variable.
+
+graph 2 (distribution) - shows a fairly normal distribution, again, a bend at the
+end indicates model needs more to give a better distribution
+
+graph 3 (homoskedasticity) - There is heteroskedasticity in the model 
+indicated my curve on blue line 
+
+graph 4 (outliers) - There is a small number of outliers, and points are not
+highly leveraged. 
+
+
+### model interpretation
+
+```{r}
+# obtain results of regression model
+summary(model_1)
+```
+
+__coefficient: __
+
+- An increase in longitude by one unit is associated with a change in price by 
+__99.9%__ on average. 
+
+R-squared - longitude explains 10.6% of the variance of airbnb price. 
+
+
+
+## Multivariate Regression
+
+From the ggpairs plot and previous analysis, neighbourhood_group is suggests 
+having an impact on airbnb prices, I will add this next. 
+
+
+
+## Relationship between Price and Borough
+
+```{r}
+# relationship log(price) ~ borough
+prices_reg_df %>% 
+  ggplot(aes(neighbourhood_group, log_price, fill = neighbourhood_group)) + 
+  # specify boxplot
+  geom_boxplot(show.legend = FALSE) +
+  # theme
+  theme_bw() + 
+  # title
+  labs(title = "Relationship between Price and Borough")
+```
+
+```{r}
+# linear model 2
+model_2 <- lm(log_price ~ longitude + neighbourhood_group, data = prices_reg_df)
+```
+
+
+```{r}
+# regression diagnostics
+autoplot(model_2)
+```
+
+
+### regression diagnostics
+
+graph 1 - independent population (achieved)
+graph 2 - still a skew in distribution
+graph 3 - Homoskdasticity (achieved)
+graph 4 - No highly leveraged points, but there are still (potentially) a few 
+outliers
+
+
+### model interpretation
+
+```{r}
+# regression results
+summary(model_2)
+```
+
+__coefficients:__ 
+
+- all statistically significant at levels of significance - can reject the null
+hypothesis and say that coefficients are statistically different from zero. 
+
+-  An increase in Manhattan by one unit (zero to one) is associated with a 
+change in price by (e^0.27-1) * 100 = __31%__, holding all other factors 
+constant 
+
+- An increase in Staten Island by one unit (zero to one) is associated with a 
+change in price by (e^-0.94 - 1) * 100 = __-60.9%__, holding all other factors 
+constant
+
+
+### Anova function
+
+```{r}
+# function to check if dummy variables are useful
+anova(model_1, model_2)
+```
+
+anova function confirms the neighbourhood_group dummy variable was good to include
+in the model. 
+
+
+## Model 3 
+
+before adding a new variable, must check the residuals of this model against the
+remaining variables in the dataset
+
+
+### check residuals
+
+
+```{r message=FALSE}
+
+# obtain residuals of model 2
+residuals <- prices_reg_df %>% 
+  # add in residuals to dataset
+  add_residuals(model_2) %>% 
+  # remove variables already in the model
+  dplyr::select(-c(log_price, longitude, neighbourhood_group))
+```
+
+
+```{r message = FALSE}
+# seperate into numeric and non-numeric 
+
+# numeric data
+price_resid_numeric <- residuals %>%
+  select_if(is.numeric)
+
+# non-numeric data
+price_resid_nonnumeric <- residuals %>%
+  select_if(function(x) !is.numeric(x))
+
+# add residudals to non-numeric data
+price_resid_nonnumeric$resid <- residuals$resid
+
+# now ready for comparing model residuals to rest of data
+
+# numeric ggpairs
+ggpairs(price_resid_numeric)
+```
+
+
+```{r message=FALSE}
+# non-numeric ggpairs
+ggpairs(price_resid_nonnumeric)
+```
+
+
+From numeric variables, availability_365 has the highest correlation with price
+a positive correlation of 0.131 (statistically significant). 
+
+However, the non-numeric variables indicate that room type may present a better
+explanation of price variance. 
+
+
+### Comparison between impact of Room Type and Availability on Price
+
+```{r}
+# relationship residuals ~ room availability
+avail_plot <- price_resid_numeric %>% 
+  ggplot(aes(availability_365, resid)) + 
+  # scatter plot 
+  geom_point() +
+  # insert linear model line of best fit
+  geom_smooth(method = "lm", se = FALSE, colour = "red") + 
+  # theme
+  theme_bw() +
+  # titles
+  labs(x = "Yearly Room Availability", y = "Residuals", 
+       title = "Relationship Residuals and Availability") +
+  # adjust title font size
+  theme(plot.title = element_text(size=10))
+
+
+# relationship residuals ~ room_type
+room_type_plot <- price_resid_nonnumeric %>% 
+  ggplot(aes(room_type, resid, fill = room_type)) + 
+  # boxplot
+  geom_boxplot(show.legend = FALSE) +
+  # theme
+  theme_bw() + 
+  # titles 
+  labs(title = "Relationship Residuals and Room Type",
+       x = "Room Type", y = "Residuals") +
+  # adjust title font size
+  theme(plot.title = element_text(size=10))
+
+
+# plot both visuals together
+cowplot::plot_grid(avail_plot, room_type_plot, nrow = 1) 
+```
+
+The comparison suggests room type should offer more explanation. 
+
+
+```{r}
+# linear model 3
+model_3 <- lm(log_price ~ longitude + neighbourhood_group + room_type, 
+              data = prices_reg_df)
+```
+
+
+```{r}
+# check model diagnostics
+autoplot(model_3)
+```
+
+
+graph 1 - residuals are independent
+graph 2 - the residuals seem to be increasingly not distributed around zero
+with more skew at the beginning and end
+graph 3 - conditional variance of residuals is constant (homoskedasticity)
+
+
+```{r}
+# model results
+summary(model_3)
+```
+
+
+As anticipated, room_type greatly enhanced the explanation of the model. The 
+R-squared suggests the model explains 49.3% of the variance in price. 
+
+The variable coefficients are all statistically significant therefore can be
+interpreted. 
+
+
+## Model 4
+
+### Check residuals
+
+
+```{r message=FALSE}
+# compare model residuals to remaining data
+residuals <- prices_reg_df %>% 
+  # add residuals
+  add_residuals(model_3) %>% 
+  # remove variables in model
+  dplyr::select(-c(log_price, longitude, neighbourhood_group, room_type))
+```
+
+
+```{r message = FALSE}
+
+# seperate into numeric and non-numeric 
+
+# numeric data
+price_resid_numeric <- residuals %>%
+  select_if(is.numeric)
+
+# non-numeric data
+price_resid_nonnumeric <- residuals %>%
+  select_if(function(x) !is.numeric(x))
+
+
+# add residuals to non-numeric data
+price_resid_nonnumeric$resid <- residuals$resid
+
+# numeric ggpairs
+ggpairs(price_resid_numeric)
+```
+
+
+```{r message = FALSE}
+# non-numeric ggpairs
+ggpairs(price_resid_nonnumeric)
+```
+
+
+As before, availability is displaying by far the strongest correlation, and there
+does not seem to be any stand out non-numeric variables. Therefore, room 
+availability will be used in the next model. 
+
+
+```{r}
+# linear model 4
+model_4 <- lm(log_price ~ longitude + neighbourhood_group + room_type + 
+                availability_365, data = prices_reg_df)
+```
+
+
+
+```{r}
+# check model diagnostics
+autoplot(model_4)
+```
+
+graph 1 - model population is independently distributed
+graph 2 - still skew at both ends of graph, indicating graph is only somewhat
+normally distributed
+graph 3 - conditional variance of residuals is constant (homoskedastic)
+
+
+
+```{r}
+# model results
+summary(model_4)
+```
+
+
+R-squared has only increased marginally to 0.51 - model explains 51% of the 
+variance in price
+
+All variables in the model are statistically significant
+
+
+
+## Adding an interaction term
+
+potential terms:
+
+- longitude:neighbourhood_group
+- longitude:room_type
+- longitude:availability_365
+- neighbourhood_group:room_type
+- neighbourhood_group:availability_365
+- room_type:availability_365
+
+
+Through process of elimination, longitude:neighbourhood_group 
+
+```{r}
+# linear model 5 - with interaction term
+model_5 <- lm(log_price ~ longitude + neighbourhood_group + room_type + 
+                availability_365 + longitude:neighbourhood_group,
+              data = prices_reg_df)
+```
+
+
+### Plotting the interaction 
+
+```{r}
+# add model residuals to data
+price_resid <- prices_reg_df %>% 
+  # add model residuals
+  add_residuals(model_5) %>% 
+  # remove log_price
+  dplyr::select(-log_price)
+
+
+# check the interaction between longitude and neighbourhood_group
+coplot(resid ~ longitude | neighbourhood_group,
+       # give an action to be carried out in each panel
+       panel = function(x, y, ...){
+         # plot coordinates of x and y
+         points(x, y)
+         # insert linear model line
+         abline(lm(y ~ x), col = "blue")
+       },
+       data = price_resid, rows = 1)
+```
+
+
+### Model Diagnostics
+
+```{r}
+# regression diagnostics
+autoplot(model_5)
+```
+
+graph 1 - population is independent
+graph 2 - model still not completely evenly distributed around 0
+graph 3 - conditional variance of residuals is constant (homoskedasticity)
+graph 4 - there are still some outliers, but no highly leveraged points
+
+
+### Model Summary
+
+```{r}
+# model results
+summary(model_5)
+```
+__Model Summary:__
+
+- All explanatory variables are statistically significant
+
+- R-squared: model explains 52.5% of variance in price
+  - model suffices as an ok explanation
+  
+- Room_type had the greatest influence on the model
+  - interpret the coefficient for room_type- entire/apt:
+    - An increase in entire/apt by one unit (zero to one) is associated with a 
+change in price by (e^0.73-1) * 100 = __107.5%__, holding all other factors 
+constant
+
+
+### Variable relative importance 
+
+```{r message=FALSE}
+
+# function to calculate variable importance
+calc.relimp(model_5, type = "lmg", rela = TRUE)
+```
+
+__Variables of relative importance:__ 
+
+Room type, perhaps unsurprisingly, is the most relevant variable for explaining
+variations in price. 
+The least explanatory is availability_365
+
+
+# Conclusion and Recommendations
+
+__For Consumers:__ 
+
+- The room type advertised is very important to determining the price you pay
+- location analysis suggests city centre areas demand much higher prices than 
+outskirt areas such as Staten Island
+
+__For hosts:__ 
+- How you describe your property doesn't translate to being able to charge
+higher prices
+- will be able to charge a much higher price for property listed as whole apartment
+- property availability does not have much impact on price
+
+
+# Future analysis
+
+More data on:
+
+-yearly data
+  - time-series analysis
+    - identify cyclical trends

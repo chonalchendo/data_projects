@@ -1,5 +1,0 @@
-"0","prices_reg_df %>% "
-"0","  ggplot(aes(longitude, log_price)) + "
-"0","  geom_point() + "
-"0","  geom_smooth(method = ""lm"", se = FALSE, colour = ""red"") +"
-"0","  theme_bw()"

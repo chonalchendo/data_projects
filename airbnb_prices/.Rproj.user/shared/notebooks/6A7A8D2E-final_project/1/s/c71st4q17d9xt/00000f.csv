@@ -1,8 +1,0 @@
-"0","prices_new <- prices_df %>% "
-"0","  mutate(price_class = case_when("
-"0","    price < 100 ~ ""Low"", "
-"0","    price < 200 ~ ""Medium"", "
-"0","    price < 300 ~ ""High"","
-"0","    TRUE ~ ""Very High"""
-"0","  ))"
-"0","  "

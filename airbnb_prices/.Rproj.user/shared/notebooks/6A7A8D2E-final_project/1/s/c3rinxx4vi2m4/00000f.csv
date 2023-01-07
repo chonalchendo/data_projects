@@ -1,3 +1,0 @@
-"0","model_2 <- lm(log_price ~ longitude + neighbourhood_group, data = prices_reg_df)"
-"0",""
-"0","autoplot(model_2)"

@@ -1,7 +1,0 @@
-"0","# distribution of price "
-"0","prices_df %>% "
-"0","  ggplot(aes(price)) +"
-"0","  geom_histogram(bins = 30, aes(y = ..density..), fill = ""red"") + "
-"0","  geom_density(alpha = 0.2, fill = ""red"") +"
-"0","  theme_bw() +"
-"0","  labs(title = ""Distribution of Price"")"

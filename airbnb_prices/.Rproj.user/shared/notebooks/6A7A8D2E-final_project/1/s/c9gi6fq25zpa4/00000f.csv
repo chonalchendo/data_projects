@@ -1,4 +1,0 @@
-"0","variable_numeric <- prices_reg_df %>%"
-"0","  select_if(is.numeric)"
-"0",""
-"0","ggpairs(variable_numeric)"

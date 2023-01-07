@@ -1,6 +1,0 @@
-"0","variable_nonnumeric <- prices_reg_df %>%"
-"0","  select_if(function(x) !is.numeric(x))"
-"0",""
-"0","variable_nonnumeric$log_price <- prices_reg_df$log_price"
-"0",""
-"0","ggpairs(variable_nonnumeric)"

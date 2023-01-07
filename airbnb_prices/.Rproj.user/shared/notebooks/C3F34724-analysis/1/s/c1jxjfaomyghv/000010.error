@@ -1,1 +1,0 @@
-{"frames":[{"func":"test %>% add_predictions(model_6) %>% select(log_price, pred)","file":"","line_number":0,"end_line_number":0,"character_number":0,"end_character_number":0}],"message":"Error in select(., log_price, pred) : unused arguments (log_price, pred)\n"}

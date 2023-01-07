@@ -1,3 +1,0 @@
-"0","model_1 <- lm(log_price ~ longitude, data = prices_reg_df)"
-"0",""
-"0","autoplot(model_1)"

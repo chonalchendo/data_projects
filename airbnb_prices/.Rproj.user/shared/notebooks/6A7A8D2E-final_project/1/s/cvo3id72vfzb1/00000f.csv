@@ -1,2 +1,0 @@
-"0","prices_df %>% "
-"0","  summarise(mean_price = mean(price))"
